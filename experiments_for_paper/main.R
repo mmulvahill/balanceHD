@@ -1,11 +1,12 @@
 rm(list = ls())
 
+setwd("~/Projects/FTE/grant001_ghosh_nsf_theorypredanalytics/lib/balanceHD/experiments_for_paper/")
 library(balanceHD)
 library(mvtnorm)
 
 # Read inputs to simulation
 
-args=(commandArgs(TRUE))
+args = (commandArgs(TRUE))
 beta.setup = as.numeric(args[1])
 prop.setup = as.numeric(args[2])
 n = as.numeric(args[3])

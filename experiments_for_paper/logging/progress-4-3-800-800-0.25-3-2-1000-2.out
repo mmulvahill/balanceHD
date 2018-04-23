@@ -1,0 +1,246 @@
+
+R version 3.4.4 (2018-03-15) -- "Someone to Lean On"
+Copyright (C) 2018 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin17.3.0 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> rm(list = ls())
+> 
+> setwd("~/Projects/FTE/grant001_ghosh_nsf_theorypredanalytics/lib/balanceHD/experiments_for_paper/")
+> library(balanceHD)
+> library(mvtnorm)
+> 
+> # Read inputs to simulation
+> 
+> args = (commandArgs(TRUE))
+> beta.setup = as.numeric(args[1])
+> prop.setup = as.numeric(args[2])
+> n = as.numeric(args[3])
+> p = as.numeric(args[4])
+> eps = as.numeric(args[5])
+> C = as.numeric(args[6])
+> extra.param = as.numeric(args[7])
+> 
+> NREP = as.numeric(args[8])
+> 
+> experiment = as.numeric(args[9])
+> 
+> tau = 1
+> 
+> source("run.comparison.R")
+> 
+> # Intialize beta
+> 
+> if(beta.setup == 0) {
++   beta.raw = rep(1, p)
++ } else if(beta.setup == 1){
++   beta.raw = 1/sqrt(1:p)
++ } else if(beta.setup == 2) {
++   beta.raw = 1/(9 + 1:p)
++ } else if(beta.setup == 3) {
++   beta.raw = c(rep(10, 10), rep(1, 90), rep(0, p - 100))
++ } else if(beta.setup == 4) {
++   beta.raw = c(rep(10, 10), rep(0, p - 10))
++ } else if(beta.setup == 5) {
++   beta.raw = 1/(1:p)^2
++ } else if(beta.setup == 6) {
++   beta.raw = 1/(1:p)
++ }
+> 
+> beta.main =  C  * beta.raw / sqrt(sum(beta.raw^2))
+> 
+> # Initialize data-generating model
+> if(prop.setup == 1) {
++ 	
++ 	# simple setup
++ 	if (extra.param == 1) {
++ 		delta.clust = 4 / sqrt(n) * rep(1, p)
++ 	} else if (extra.param == 2) {
++ 		delta.clust = 40 / sqrt(n) * rep(c(1, rep(0, 9)), p/10)
++ 	}
++ 	gen.data = function() {
++ 		CLUST = rbinom(n, 1, 0.5)
++ 		W = rbinom(n, 1, eps + (1 - 2*eps) * CLUST)
++ 		X = matrix(rnorm(n * p), n, p) + outer(CLUST, delta.clust)
++ 		Y = X %*% beta.main + rnorm(n) + tau * W
++ 		list(X=X, Y=Y, W=W, catt=tau)
++ 	}
++ 
++ } else if(prop.setup == 2) {
++ 
++ 	# AR-1 model
++ 	rho = c(0.5, 0.9)[extra.param]
++ 	beta.main = beta.main[1 + (23 * (0:(length(beta.main) - 1))) %% length(beta.main)]
++ 	beta.prop = c(rep(1/40, 100), rep(0, p - 100))
++ 	gen.data = function() {
++ 		X = 10 * rmvnorm(n, sigma = outer(1:p, 1:p, FUN=function(x, y) rho^(abs(x-y))), method = "chol")
++ 		W = rbinom(n, 1, prob = 1/(1 + exp(-beta.prop * X)))
++ 		Y = X %*% beta.main + rnorm(n, 0, 1) + tau * W
++ 		list(X=X, Y=Y, W=W, catt=tau)
++ 	}
++ 
++ } else if(prop.setup == 3) {
++ 
++ 	# many cluster model
++ 	nclust = c(6, 20)[extra.param]
++ 	beta.main = sqrt(nclust) * beta.main
++ 	clust.ptreat = rep(c(eps, 1 - eps), nclust/2)
++ 	tau.clust = tau * rexp(nclust)
++ 	gen.data = function() {
++ 		cluster.center = matrix(rnorm(nclust * p), nclust, p)
++ 		cluster = sample.int(nclust, n, replace = TRUE)
++ 		X = cluster.center[cluster,] + matrix(rnorm(n * p), n, p)
++ 		W = rbinom(n, 1, clust.ptreat[cluster])
++ 		Y = X %*% beta.main + rnorm(n, 0, 1) + tau.clust[cluster] * W
++ 		list(X=X, Y=Y, W=W, catt=mean(tau.clust[cluster[W==1]]))
++ 	}
++ 
++ } else if(prop.setup == 4) {
++ 
++ 	tau = 1
++ 	
++ 	# misspecified model
++ 	gen.data = function() {
++ 		X = matrix(rnorm(n * p), n, p)
++ 		# Normalized such that E[tauX | W = 1] = 1
++ 		tauX = log(1 + exp(-2 - 2 * X[,1])) / 0.915
++ 		ptreat = 1 - exp(-tauX)
++ 		W = rbinom(n, 1, prob = ptreat)
++ 		mean(tauX[W == 1])
++ 		Y = rnorm(n, 0, 1) + tauX * (2 * W - 1) / 2 + rowSums(X[,1:10])
++ 		list(X=X, Y=Y, W=W, catt=mean(tauX[W==1]))
++ 	}
++         
++ } else if(prop.setup == 6) {
++ 
++ 	tau = 0.5
++ 	rho = 0.5
++ 	
++ 	Sigma = outer(1:p, 1:p, FUN=function(x, y) rho^(abs(x-y)))
++ 	
++ 	beta.raw = 1/(1:p)^2
++ 	beta.main =  C  * beta.raw / sqrt(sum(beta.raw^2))
++ 	
++ 	if (extra.param == 1) {
++ 		beta.prop = 1/(1:p)^2
++ 	} else if (extra.param == 2) {
++ 	    beta.prop = 1/sqrt(1:p)
++ 	}
++ 	
++ 	beta.prop = eps * beta.prop / sqrt(sum(beta.prop^2))
++ 	
++ 	gen.data = function() {
++ 		X = rmvnorm(n, sigma = Sigma, method = "chol")
++ 		theta = X %*% beta.prop + rnorm(n)
++ 		W = rbinom(n, 1, 1/(1 + exp(theta)))
++ 		Y = X %*% beta.main + W * tau + rnorm(n)
++ 		list(X=X, Y=Y, W=W, catt=tau)
++ 	}
++         
++ }
+> 
+> 
+> 
+> if (experiment == 1) {
++ 	
++ 	# MSE vs. other methods
++ 	results = replicate(NREP, {
++ 		XYW = gen.data()
++ 		res = run.comparison(XYW)
++ 		print(c(CATT=XYW$catt, res))
++ 		return(c(CATT=XYW$catt, res))
++ 	})
++ 	
++ 	print(colMeans((t(results) - results["CATT",])/results["CATT",]))
++ 	print(colMeans(((t(results) - results["CATT",])/results["CATT",])^2))
++ 	
++ } else if (experiment == 2) {
++ 	
++ 	# coverage
++ 	results = replicate(NREP, {
++ 		XYW = gen.data()
++ 		res = coverage.test(XYW)
++ 		print(c(CATT=XYW$catt, res))
++ 		return(c(CATT=XYW$catt, res))
++ 	})
++ 	rownames(results) = c("CATT", "tau.hat", "se.hat")
++ 	se.err = (results[2,] - results[1,]) / results[3,]
++ 	coverage = mean(abs(se.err) <= qnorm(0.975))
++ }
+     CATT                     
+1.4880369 1.4117468 0.1106662 
+     CATT                     
+1.4233102 1.3529358 0.1085908 
+     CATT                     
+1.5511553 1.7053301 0.1288967 
+     CATT                     
+1.4725605 1.6606246 0.1176354 
+     CATT                     
+1.4880205 1.4329485 0.1129691 
+     CATT                     
+1.4428373 1.4975295 0.1104181 
+     CATT                     
+1.4561128 1.3234817 0.1049403 
+    CATT                   
+1.522972 1.391478 0.101996 
+     CATT                     
+1.3378512 1.4910377 0.1072754 
+     CATT                     
+1.3633462 1.3805462 0.1079657 
+     CATT                     
+1.4538682 1.4726727 0.1245072 
+     CATT                     
+1.5533023 1.6138970 0.1291331 
+     CATT                     
+1.4347832 1.3844027 0.1027996 
+     CATT                     
+1.5048666 1.4732445 0.1116608 
+     CATT                     
+1.3401289 1.1689171 0.1060609 
+      CATT                       
+1.41717600 1.52203487 0.09706103 
+     CATT                     
+1.5747196 1.6645886 0.1136146 
+     CATT                     
+1.4534991 1.5065081 0.1178242 
+    CATT                   
+1.482201 1.390687 0.107780 
+     CATT                     
+1.4148750 1.6150105 0.1144204 
+     CATT                     
+1.4673073 1.6019829 0.1115092 
+     CATT                     
+1.4881907 1.6353771 0.1146907 
+     CATT                     
+1.5239182 1.3466418 0.1059496 
+     CATT                     
+1.3831583 1.3492353 0.1036992 
+     CATT                     
+1.3707178 1.3286406 0.1012596 
+     CATT                     
+1.4960198 1.5030692 0.1150316 
+     CATT                     
+1.3806290 1.5042993 0.1085622 
+    CATT                   
+1.269322 1.282364 0.113803 
+     CATT                     
+1.5329668 1.5506526 0.1099989 
+     CATT                     
+1.3998835 1.4798472 0.1056148 
+      CATT                       
+1.40830784 1.24045099 0.09902823 
+     CATT                     
+1.5465062 1.6680532 0.1168637 

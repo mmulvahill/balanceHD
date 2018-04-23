@@ -1,0 +1,362 @@
+
+R version 3.4.4 (2018-03-15) -- "Someone to Lean On"
+Copyright (C) 2018 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin17.3.0 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> rm(list = ls())
+> 
+> setwd("~/Projects/FTE/grant001_ghosh_nsf_theorypredanalytics/lib/balanceHD/experiments_for_paper/")
+> library(balanceHD)
+> library(mvtnorm)
+> 
+> # Read inputs to simulation
+> 
+> args = (commandArgs(TRUE))
+> beta.setup = as.numeric(args[1])
+> prop.setup = as.numeric(args[2])
+> n = as.numeric(args[3])
+> p = as.numeric(args[4])
+> eps = as.numeric(args[5])
+> C = as.numeric(args[6])
+> extra.param = as.numeric(args[7])
+> 
+> NREP = as.numeric(args[8])
+> 
+> experiment = as.numeric(args[9])
+> 
+> tau = 1
+> 
+> source("run.comparison.R")
+> 
+> # Intialize beta
+> 
+> if(beta.setup == 0) {
++   beta.raw = rep(1, p)
++ } else if(beta.setup == 1){
++   beta.raw = 1/sqrt(1:p)
++ } else if(beta.setup == 2) {
++   beta.raw = 1/(9 + 1:p)
++ } else if(beta.setup == 3) {
++   beta.raw = c(rep(10, 10), rep(1, 90), rep(0, p - 100))
++ } else if(beta.setup == 4) {
++   beta.raw = c(rep(10, 10), rep(0, p - 10))
++ } else if(beta.setup == 5) {
++   beta.raw = 1/(1:p)^2
++ } else if(beta.setup == 6) {
++   beta.raw = 1/(1:p)
++ }
+> 
+> beta.main =  C  * beta.raw / sqrt(sum(beta.raw^2))
+> 
+> # Initialize data-generating model
+> if(prop.setup == 1) {
++ 	
++ 	# simple setup
++ 	if (extra.param == 1) {
++ 		delta.clust = 4 / sqrt(n) * rep(1, p)
++ 	} else if (extra.param == 2) {
++ 		delta.clust = 40 / sqrt(n) * rep(c(1, rep(0, 9)), p/10)
++ 	}
++ 	gen.data = function() {
++ 		CLUST = rbinom(n, 1, 0.5)
++ 		W = rbinom(n, 1, eps + (1 - 2*eps) * CLUST)
++ 		X = matrix(rnorm(n * p), n, p) + outer(CLUST, delta.clust)
++ 		Y = X %*% beta.main + rnorm(n) + tau * W
++ 		list(X=X, Y=Y, W=W, catt=tau)
++ 	}
++ 
++ } else if(prop.setup == 2) {
++ 
++ 	# AR-1 model
++ 	rho = c(0.5, 0.9)[extra.param]
++ 	beta.main = beta.main[1 + (23 * (0:(length(beta.main) - 1))) %% length(beta.main)]
++ 	beta.prop = c(rep(1/40, 100), rep(0, p - 100))
++ 	gen.data = function() {
++ 		X = 10 * rmvnorm(n, sigma = outer(1:p, 1:p, FUN=function(x, y) rho^(abs(x-y))), method = "chol")
++ 		W = rbinom(n, 1, prob = 1/(1 + exp(-beta.prop * X)))
++ 		Y = X %*% beta.main + rnorm(n, 0, 1) + tau * W
++ 		list(X=X, Y=Y, W=W, catt=tau)
++ 	}
++ 
++ } else if(prop.setup == 3) {
++ 
++ 	# many cluster model
++ 	nclust = c(6, 20)[extra.param]
++ 	beta.main = sqrt(nclust) * beta.main
++ 	clust.ptreat = rep(c(eps, 1 - eps), nclust/2)
++ 	tau.clust = tau * rexp(nclust)
++ 	gen.data = function() {
++ 		cluster.center = matrix(rnorm(nclust * p), nclust, p)
++ 		cluster = sample.int(nclust, n, replace = TRUE)
++ 		X = cluster.center[cluster,] + matrix(rnorm(n * p), n, p)
++ 		W = rbinom(n, 1, clust.ptreat[cluster])
++ 		Y = X %*% beta.main + rnorm(n, 0, 1) + tau.clust[cluster] * W
++ 		list(X=X, Y=Y, W=W, catt=mean(tau.clust[cluster[W==1]]))
++ 	}
++ 
++ } else if(prop.setup == 4) {
++ 
++ 	tau = 1
++ 	
++ 	# misspecified model
++ 	gen.data = function() {
++ 		X = matrix(rnorm(n * p), n, p)
++ 		# Normalized such that E[tauX | W = 1] = 1
++ 		tauX = log(1 + exp(-2 - 2 * X[,1])) / 0.915
++ 		ptreat = 1 - exp(-tauX)
++ 		W = rbinom(n, 1, prob = ptreat)
++ 		mean(tauX[W == 1])
++ 		Y = rnorm(n, 0, 1) + tauX * (2 * W - 1) / 2 + rowSums(X[,1:10])
++ 		list(X=X, Y=Y, W=W, catt=mean(tauX[W==1]))
++ 	}
++         
++ } else if(prop.setup == 6) {
++ 
++ 	tau = 0.5
++ 	rho = 0.5
++ 	
++ 	Sigma = outer(1:p, 1:p, FUN=function(x, y) rho^(abs(x-y)))
++ 	
++ 	beta.raw = 1/(1:p)^2
++ 	beta.main =  C  * beta.raw / sqrt(sum(beta.raw^2))
++ 	
++ 	if (extra.param == 1) {
++ 		beta.prop = 1/(1:p)^2
++ 	} else if (extra.param == 2) {
++ 	    beta.prop = 1/sqrt(1:p)
++ 	}
++ 	
++ 	beta.prop = eps * beta.prop / sqrt(sum(beta.prop^2))
++ 	
++ 	gen.data = function() {
++ 		X = rmvnorm(n, sigma = Sigma, method = "chol")
++ 		theta = X %*% beta.prop + rnorm(n)
++ 		W = rbinom(n, 1, 1/(1 + exp(theta)))
++ 		Y = X %*% beta.main + W * tau + rnorm(n)
++ 		list(X=X, Y=Y, W=W, catt=tau)
++ 	}
++         
++ }
+> 
+> 
+> 
+> if (experiment == 1) {
++ 	
++ 	# MSE vs. other methods
++ 	results = replicate(NREP, {
++ 		XYW = gen.data()
++ 		res = run.comparison(XYW)
++ 		print(c(CATT=XYW$catt, res))
++ 		return(c(CATT=XYW$catt, res))
++ 	})
++ 	
++ 	print(colMeans((t(results) - results["CATT",])/results["CATT",]))
++ 	print(colMeans(((t(results) - results["CATT",])/results["CATT",])^2))
++ 	
++ } else if (experiment == 2) {
++ 	
++ 	# coverage
++ 	results = replicate(NREP, {
++ 		XYW = gen.data()
++ 		res = coverage.test(XYW)
++ 		print(c(CATT=XYW$catt, res))
++ 		return(c(CATT=XYW$catt, res))
++ 	})
++ 	rownames(results) = c("CATT", "tau.hat", "se.hat")
++ 	se.err = (results[2,] - results[1,]) / results[3,]
++ 	coverage = mean(abs(se.err) <= qnorm(0.975))
++ }
+     CATT                     
+0.9917181 0.9633936 0.1991692 
+    CATT                   
+1.035584 1.155354 0.167309 
+     CATT                     
+1.0500018 0.7952688 0.1757209 
+     CATT                     
+1.1186608 1.2900045 0.1772106 
+     CATT                     
+0.9753530 0.8300253 0.1737848 
+     CATT                     
+1.0096166 1.0977852 0.1865536 
+     CATT                     
+1.0583379 0.7376173 0.1588821 
+     CATT                     
+1.1496834 1.2139699 0.1827623 
+     CATT                     
+1.0632508 1.0454156 0.1796372 
+     CATT                     
+1.0903136 1.2935219 0.1717914 
+     CATT                     
+1.0446745 1.0006910 0.1593632 
+     CATT                     
+0.9709311 0.7332148 0.1704602 
+     CATT                     
+1.1879724 1.3214906 0.1825172 
+     CATT                     
+1.0594369 1.1561612 0.1734328 
+     CATT                     
+0.9538472 0.8610198 0.1885940 
+     CATT                     
+1.2755410 1.0917555 0.1943851 
+     CATT                     
+1.0727554 0.9412916 0.1654853 
+     CATT                     
+0.9371798 1.0738080 0.1985897 
+     CATT                     
+0.9588736 0.9178771 0.1733144 
+     CATT                     
+1.1077499 1.1902514 0.1562877 
+     CATT                     
+1.0431024 1.1273341 0.1744794 
+     CATT                     
+1.0735975 1.1204492 0.1877155 
+     CATT                     
+1.1849880 1.4850906 0.1822604 
+     CATT                     
+0.9699740 1.0521750 0.1685165 
+     CATT                     
+1.1001374 0.9059388 0.1882554 
+     CATT                     
+1.0785806 1.3045801 0.1864759 
+     CATT                     
+1.0605587 0.7043859 0.2014060 
+     CATT                     
+0.9834517 0.8715633 0.1721311 
+     CATT                     
+1.1336562 1.0778530 0.1583555 
+     CATT                     
+1.1208354 1.1901136 0.1838779 
+     CATT                     
+1.0149929 0.9418871 0.1789444 
+     CATT                     
+0.9879713 0.8938877 0.1986429 
+     CATT                     
+1.0810830 1.0125575 0.1573032 
+     CATT                     
+1.1413164 1.1853432 0.1658597 
+    CATT                   
+1.098511 1.073111 0.212787 
+     CATT                     
+0.9854322 1.1319905 0.1731345 
+    CATT                   
+1.077801 1.298046 0.172884 
+     CATT                     
+0.9730821 0.8104095 0.1613271 
+     CATT                     
+0.9997184 1.0203028 0.1792779 
+     CATT                     
+1.0131121 1.0333529 0.1734504 
+     CATT                     
+1.0022205 0.9418838 0.1544811 
+     CATT                     
+1.0004392 1.3298893 0.1870576 
+     CATT                     
+1.0143604 0.8098445 0.1601415 
+     CATT                     
+1.0737677 1.1610267 0.2355707 
+    CATT                   
+1.121196 1.293846 0.179238 
+     CATT                     
+1.0495572 0.9726295 0.1863621 
+    CATT                   
+1.047113 1.033109 0.155861 
+     CATT                     
+1.0739205 1.3317548 0.1877285 
+     CATT                     
+1.0136781 1.4042393 0.1732229 
+     CATT                     
+1.1298687 1.2513433 0.1779579 
+     CATT                     
+1.0335052 0.9050912 0.1742551 
+     CATT                     
+1.0996703 1.2481452 0.1628083 
+     CATT                     
+1.1036540 1.2569491 0.1933175 
+     CATT                     
+1.0733052 1.3513361 0.1809851 
+     CATT                     
+1.0388009 1.0658164 0.1556674 
+     CATT                     
+1.0762981 1.0555778 0.1985648 
+     CATT                     
+1.1054235 0.7843115 0.1884386 
+     CATT                     
+0.9983229 0.8227722 0.1878028 
+     CATT                     
+1.0734036 0.7900930 0.1811349 
+     CATT                     
+1.0206667 1.1146987 0.2438666 
+     CATT                     
+1.1586940 1.0880237 0.1788947 
+     CATT                     
+1.1910768 1.3184447 0.2289411 
+     CATT                     
+1.0431827 1.0695262 0.2033937 
+     CATT                     
+1.0484285 0.7799868 0.1794481 
+     CATT                     
+1.0924911 0.9669951 0.1571393 
+     CATT                     
+1.1724966 1.1550236 0.2058365 
+     CATT                     
+1.1371559 1.1788285 0.1816106 
+     CATT                     
+1.1124038 0.9180452 0.1660823 
+     CATT                     
+0.9257323 0.8116683 0.2059859 
+     CATT                     
+0.9818801 0.8090981 0.1702598 
+     CATT                     
+0.9708110 1.0246692 0.1694634 
+     CATT                     
+1.1423671 0.9885593 0.1677123 
+     CATT                     
+0.9805040 1.3204303 0.1799751 
+     CATT                     
+0.9659603 1.2317577 0.1586029 
+     CATT                     
+0.9288215 0.9628968 0.1574804 
+     CATT                     
+1.0479278 1.2600981 0.1726858 
+     CATT                     
+1.0977259 1.1775533 0.1522029 
+     CATT                     
+1.0316333 1.0418651 0.1640912 
+     CATT                     
+1.0234570 1.0376036 0.2111585 
+     CATT                     
+1.0939726 1.1158423 0.1624427 
+     CATT                     
+0.9061689 0.9519570 0.1949740 
+     CATT                     
+1.0332492 0.7254569 0.1822116 
+    CATT                   
+0.968642 1.072194 0.157920 
+     CATT                     
+1.0990781 1.3147498 0.1806691 
+     CATT                     
+1.0483035 1.1805441 0.2030667 
+     CATT                     
+0.9057258 0.7876769 0.1781272 
+     CATT                     
+1.0874691 1.0906937 0.1937164 
+     CATT                     
+0.9414323 0.8947823 0.1716067 
+     CATT                     
+1.0566929 1.0823690 0.1736808 
+     CATT                     
+0.9180184 0.8634433 0.1601700 

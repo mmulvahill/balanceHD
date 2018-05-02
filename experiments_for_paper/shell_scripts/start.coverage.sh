@@ -2,8 +2,8 @@
 
 betavals=(4 5 6)
 propvals=(3)
-nvals=(400 800 1600)
-pvals=(800 1600 3200)
+nvals=(80000)
+pvals=(100)
 epsvals=(0.1 0.25)
 cvals=(3)
 extravals=(2)
